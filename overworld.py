@@ -41,6 +41,16 @@ class Room:
         for j in range(width):
             dungeon[0][j] = dungeon[height - 1][j] = '#'
 
+        # Create open corridors from the center of each room to the center of the dungeon
+        central_x = central_start_x + central_width // 2
+        central_y = central_start_y + central_height // 2
+        for y in range(central_start_y, central_start_y + central_height):
+            if dungeon[y][central_x] == '#':
+                dungeon[y][central_x] = ' '
+        for x in range(central_start_x, central_start_x + central_width):
+            if dungeon[central_y][x] == '#':
+                dungeon[central_y][x] = ' '
+        
         return dungeon
 
     def place_doors(self):
@@ -51,7 +61,7 @@ class Room:
         doors.append((width - 2, height // 2))
         doors.append((width // 2, height - 2))
         doors.append((1, height // 2))
-
+    
         return doors
 
 def place_gold(dungeon):
@@ -86,9 +96,9 @@ def draw_dungeon(stdscr, dungeon, player_x, player_y, score, doors, current_room
                 stdscr.addch(y, x, ' ')
 
     for monster in monsters:
-        stdscr.addch(monster.y, monster.x, 'M', curses.color_pair(6))
+        stdscr.addch(monster.y, monster.x, 'X', curses.color_pair(6))
 
-    stdscr.addch(player_y, player_x, '@', curses.color_pair(3))
+    stdscr.addch(player_y, player_x, 'O', curses.color_pair(3))
     stdscr.addstr(len(dungeon) + 1, 0, f"Score: {score}")
     stdscr.addstr(len(dungeon) + 2, 0, f"Current Room: {current_room_coords}")
 
@@ -126,6 +136,15 @@ class Monster:
         return {'x': player_x, 'y': player_y}
 
 def main(stdscr):
+    """
+    Main function that runs the game loop for the overworld.
+
+    Args:
+        stdscr (curses.window): The curses window object.
+
+    Returns:
+        None
+    """
     curses.curs_set(0)
     stdscr.timeout(100)
 
@@ -147,7 +166,11 @@ def main(stdscr):
     player_x, player_y = place_player(current_room.dungeon, current_room)
     score = 0
 
-    gold_x, gold_y = place_gold(current_room.dungeon)
+    gold_positions = []
+    for row in rooms:
+        for room in row:
+            gold_x, gold_y = place_gold(room.dungeon)
+            gold_positions.append((gold_x, gold_y))
 
     monsters = [Monster(current_room.dungeon) for _ in range(3)]
 
@@ -193,10 +216,10 @@ def main(stdscr):
                 current_room_coords = (current_room_coords[0] - (player_x == 2) + (player_x == len(current_room.dungeon[0]) - 2),
                                        current_room_coords[1] - (player_y == 2) + (player_y == len(current_room.dungeon) - 2))
 
-        if player_x == gold_x and player_y == gold_y:
-            score += 10
-            remove_gold(current_room.dungeon, gold_x, gold_y)
-            gold_x, gold_y = place_gold(current_room.dungeon)
+        if (player_x, player_y) in gold_positions:
+            score += 50
+            gold_positions.remove((player_x, player_y))
+            remove_gold(current_room.dungeon, player_x, player_y)
 
         for monster in monsters:
             monster.move_towards_player(player_x, player_y, current_room.dungeon)
@@ -211,6 +234,15 @@ def main(stdscr):
                 score -= 20
             elif 0 < projectile['y'] < len(current_room.dungeon) - 1:
                 new_projectiles.append(projectile)
+        ### code so that if a monster touches the player, it will get removed from the game area:
+        for monster in monsters:
+            if monster.x == player_x and monster.y == player_y:
+                monsters.remove(monster)
+                score -= 100
+                break
+        ### also make sure that a new monster is spawned randomly in the room if one of the monsters have disappeared that way:
+        if len(monsters) < 3:
+            monsters.append(Monster(current_room.dungeon))  # add a new monster to the room
 
         projectiles = new_projectiles
 
