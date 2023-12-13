@@ -328,7 +328,7 @@ def main(stdscr):
 
         projectiles = new_projectiles
         
-        player.hunger -= random.uniform(0.1, 0.3)
+        player.hunger -= random.uniform(0.1, 0.2)
         draw_dungeon(stdscr, current_room.dungeon, player_x, player_y, score, current_room.doors, current_room_coords, monsters, food_items)
 
         # Draw the inventory at the bottom of the game area
@@ -337,8 +337,7 @@ def main(stdscr):
             stdscr.addstr(len(current_room.dungeon) + 5, i * 10, f"{i+1}. {item.name}")
         
         # Display hunger level
-        stdscr.addstr(len(current_room.dungeon) + 6, 0, f"Hunger Level: {player.hunger}")
-        
+        stdscr.addstr(len(current_room.dungeon) + 6, 0, f"Hunger Level: {int(player.hunger)}")
         stdscr.refresh()
         time.sleep(0.01)
         
