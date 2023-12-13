@@ -1,6 +1,32 @@
 import curses
 import random
 import time
+class Item:
+    def __init__(self, name, color, symbol):
+        self.name = name
+        self.color = color
+        self.symbol = symbol
+
+class Food(Item):
+    def __init__(self, name, color, symbol, hunger, rarity):
+        super().__init__(name, color, symbol)
+        self.hunger = hunger
+        self.rarity = rarity
+
+class Inventory:
+    def __init__(self):
+        self.invlist = []
+
+    def add_food(self, item):
+        self.invlist.append(item)
+
+    def remove_food(self, item):
+        if item in self.invlist:
+            self.invlist.remove(item)
+
+class Player:
+    def __init__(self, hunger):
+        self.hunger = 100
 
 class Room:
     def __init__(self, height, width, num_iterations, seed):
@@ -50,7 +76,7 @@ class Room:
         for x in range(central_start_x, central_start_x + central_width):
             if dungeon[central_y][x] == '#':
                 dungeon[central_y][x] = ' '
-        
+
         return dungeon
 
     def place_doors(self):
@@ -61,8 +87,28 @@ class Room:
         doors.append((width - 2, height // 2))
         doors.append((width // 2, height - 2))
         doors.append((1, height // 2))
-    
+
         return doors
+
+def food_items():
+    items = [
+        Food("Apple", curses.COLOR_BLUE, 'A', 10, 0.5),
+        Food("Banana", curses.COLOR_YELLOW, 'B', 15, 0.3),
+        Food("Carrot", curses.COLOR_GREEN, 'C', 8, 0.7)
+    ]
+    return items
+
+def pick_up_food(dungeon, x, y, inventory):
+    for food in food_items():
+        if dungeon[y][x] == food.symbol:
+            dungeon[y][x] = ' '
+            inventory.add_food(food)
+            break
+
+def use_food(inventory, player, food):
+    inventory.remove_food(food)
+    # Replenish hunger by the amount of the food
+    player.hunger += food.hunger
 
 def place_gold(dungeon):
     height, width = len(dungeon), len(dungeon[0])
@@ -71,6 +117,18 @@ def place_gold(dungeon):
         if dungeon[y][x] == ' ':
             dungeon[y][x] = '$'
             return x, y
+
+def place_food(dungeon):
+    height, width = len(dungeon), len(dungeon[0])
+    while True:
+        for food in food_items():
+            if random.random() < food.rarity:
+                # Generate random coordinates for the food item
+                x = random.randint(1, width - 2)
+                y = random.randint(1, height - 2)
+                # Add the food item to the world
+                dungeon[y][x] = food.symbol
+                return x, y
 
 def place_player(dungeon, room):
     while True:
@@ -81,7 +139,7 @@ def place_player(dungeon, room):
 def remove_gold(dungeon, x, y):
     dungeon[y][x] = ' '
 
-def draw_dungeon(stdscr, dungeon, player_x, player_y, score, doors, current_room_coords, monsters):
+def draw_dungeon(stdscr, dungeon, player_x, player_y, score, doors, current_room_coords, monsters, food_items):
     stdscr.clear()
 
     for y, row in enumerate(dungeon):
@@ -92,6 +150,9 @@ def draw_dungeon(stdscr, dungeon, player_x, player_y, score, doors, current_room
                 stdscr.addch(y, x, '#', curses.color_pair(1))
             elif cell == '$':
                 stdscr.addch(y, x, '$', curses.color_pair(2))
+            elif cell in [food.symbol for food in food_items()]:
+                food = next((food for food in food_items() if food.symbol == cell), None)
+                stdscr.addch(y, x, food.symbol, curses.color_pair(food.color))
             else:
                 stdscr.addch(y, x, ' ')
 
@@ -172,10 +233,19 @@ def main(stdscr):
             gold_x, gold_y = place_gold(room.dungeon)
             gold_positions.append((gold_x, gold_y))
 
+    food_positions = []
+    for row in rooms:
+        for room in row:
+            food_x, food_y = place_food(room.dungeon)  # Call place_food() on the room object
+            food_positions.append((food_x, food_y))
+    
+
     monsters = [Monster(current_room.dungeon) for _ in range(3)]
 
     projectiles = []
 
+    inventory = Inventory()  # Initialize an empty inventory
+    player = Player(100)
     while True:
         key = stdscr.getch()
 
@@ -189,6 +259,13 @@ def main(stdscr):
             player_x -= 1
         elif key == curses.KEY_RIGHT and player_x < len(current_room.dungeon[0]) - 2 and current_room.dungeon[player_y][player_x + 1] != '#':
             player_x += 1
+        elif ord('1') <= key <= ord('9'):  # Check if a number key is pressed
+            index = key - ord('1')  # Convert the key to an index
+            if 0 <= index < len(inventory.invlist):  # Check if the index is valid
+                item = inventory.invlist[index]
+                # Use the item (you can add the logic here)
+                inventory.invlist.pop(index)  # Remove the item from the inventory
+                use_food(inventory, player, item)
 
         # Player transitions to a new room
         if (player_x, player_y) in current_room.doors:
@@ -220,6 +297,7 @@ def main(stdscr):
             score += 50
             gold_positions.remove((player_x, player_y))
             remove_gold(current_room.dungeon, player_x, player_y)
+        
 
         for monster in monsters:
             monster.move_towards_player(player_x, player_y, current_room.dungeon)
@@ -241,15 +319,29 @@ def main(stdscr):
                 score -= 100
                 break
         ### also make sure that a new monster is spawned randomly in the room if one of the monsters have disappeared that way:
+        if (player_x, player_y) in food_positions:
+            score += 10
+            food_positions.remove((player_x, player_y))
+            pick_up_food(current_room.dungeon, player_x, player_y, inventory)
         if len(monsters) < 3:
             monsters.append(Monster(current_room.dungeon))  # add a new monster to the room
 
         projectiles = new_projectiles
+        
+        player.hunger -= random.uniform(0.1, 0.3)
+        draw_dungeon(stdscr, current_room.dungeon, player_x, player_y, score, current_room.doors, current_room_coords, monsters, food_items)
 
-        draw_dungeon(stdscr, current_room.dungeon, player_x, player_y, score, current_room.doors, current_room_coords, monsters)
-
+        # Draw the inventory at the bottom of the game area
+        stdscr.addstr(len(current_room.dungeon) + 4, 0, "Inventory:")
+        for i, item in enumerate(inventory.invlist):
+            stdscr.addstr(len(current_room.dungeon) + 5, i * 10, f"{i+1}. {item.name}")
+        
+        # Display hunger level
+        stdscr.addstr(len(current_room.dungeon) + 6, 0, f"Hunger Level: {player.hunger}")
+        
         stdscr.refresh()
         time.sleep(0.01)
+        
 
 if __name__ == "__main__":
     curses.wrapper(main)
